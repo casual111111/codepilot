@@ -8,9 +8,12 @@ from rich.table import Table
 
 from codepilot.agent import AgentRuntimeError, CodePilotAgent
 from codepilot.config import load_config
+from codepilot.llm import LLMError
 from codepilot.repo_map import save_repo_map
+from codepilot.session import create_session_id, list_sessions, load_session, save_session
 from codepilot.tools.git import git_diff, git_status
 from codepilot.tools.filesystem import list_project_files, read_text_file
+from codepilot.tools.patch import apply_patch, extract_changed_files, generate_patch
 from codepilot.tools.search import grep_search
 from codepilot.tools.shell import run_tests
 
@@ -216,6 +219,133 @@ def test(command: str = typer.Argument("pytest")):
     if output.strip():
         syntax = Syntax(output, "text", line_numbers=False, word_wrap=True)
         console.print(syntax)
+
+
+@app.command()
+def edit(
+    instruction: str,
+    test_command: str = typer.Option("pytest", "--test-command", "-t"),
+):
+    """Generate a patch for a requested code change and apply it after confirmation."""
+    config = load_config()
+    prompt_path = Path(__file__).parent / "prompts" / "edit.md"
+    edit_prompt = prompt_path.read_text(encoding="utf-8")
+    repo_map = save_repo_map(".")
+    current_diff = git_diff()
+
+    messages = [
+        {"role": "system", "content": edit_prompt},
+        {
+            "role": "user",
+            "content": (
+                f"User request:\n{instruction}\n\n"
+                f"Repo map:\n{repo_map}\n\n"
+                f"Current unstaged diff:\n{current_diff}\n"
+            ),
+        },
+    ]
+
+    try:
+        patch = generate_patch(messages=messages, config=config)
+    except LLMError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    patch = patch.strip()
+
+    if not patch:
+        console.print("[yellow]No patch generated.[/yellow]")
+        raise typer.Exit(code=1)
+
+    syntax = Syntax(patch, "diff", line_numbers=True, word_wrap=True)
+    console.print(Panel.fit("Generated Patch", title="CodePilot Edit"))
+    console.print(syntax)
+
+    check_result = apply_patch(patch, check=True)
+    if check_result["returncode"] != 0:
+        console.print("[red]Patch failed git apply --check.[/red]")
+        console.print(check_result["stderr"] or check_result["stdout"])
+        raise typer.Exit(code=1)
+
+    if not typer.confirm("Apply this patch?", default=False):
+        console.print("[yellow]Patch not applied.[/yellow]")
+        raise typer.Exit(code=1)
+
+    apply_result = apply_patch(patch)
+    if apply_result["returncode"] != 0:
+        console.print("[red]Patch apply failed.[/red]")
+        console.print(apply_result["stderr"] or apply_result["stdout"])
+        raise typer.Exit(code=1)
+
+    test_result = run_tests(test_command)
+    changed_files = extract_changed_files(patch)
+    session = {
+        "session_id": create_session_id(),
+        "question": instruction,
+        "messages": messages,
+        "tool_steps": [],
+        "read_files": [],
+        "changed_files": changed_files,
+        "test_result": {
+            "command": test_result["command"],
+            "returncode": test_result["returncode"],
+            "timed_out": test_result["timed_out"],
+        },
+    }
+    save_session(session)
+
+    if test_result["returncode"] == 0:
+        console.print("[green]Patch applied and tests passed.[/green]")
+    else:
+        console.print("[red]Patch applied but tests failed.[/red]")
+
+    console.print(f"Session: {session['session_id']}")
+
+
+@app.command()
+def history():
+    """Show saved CodePilot sessions."""
+    sessions = list_sessions(".")
+
+    if not sessions:
+        console.print("[yellow]No sessions found.[/yellow]")
+        return
+
+    table = Table(title="CodePilot Sessions")
+    table.add_column("Session")
+    table.add_column("Question")
+    table.add_column("Changed Files")
+    table.add_column("Test")
+
+    for session in sessions:
+        test_result = session.get("test_result") or {}
+        returncode = test_result.get("returncode", "")
+        table.add_row(
+            session["session_id"],
+            session["question"],
+            ", ".join(session.get("changed_files") or []),
+            str(returncode),
+        )
+
+    console.print(table)
+
+
+@app.command()
+def resume(session_id: str):
+    """Show a saved CodePilot session."""
+    try:
+        session = load_session(session_id)
+    except FileNotFoundError:
+        console.print(f"[red]Session not found:[/red] {session_id}")
+        raise typer.Exit(code=1)
+
+    syntax = Syntax(
+        __import__("json").dumps(session, ensure_ascii=False, indent=2),
+        "json",
+        line_numbers=True,
+        word_wrap=True,
+    )
+    console.print(syntax)
 
 
 if __name__ == "__main__":

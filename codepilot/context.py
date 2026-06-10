@@ -18,6 +18,61 @@ Rules:
 """.strip()
 
 
+class AgentContext:
+    def __init__(
+        self,
+        user_question: str,
+        max_messages: int = 20,
+        max_tool_output_chars: int = 12000,
+    ):
+        self.messages: list[dict] = build_initial_messages(user_question)
+        self.tool_steps: list[dict] = []
+        self.read_files: set[str] = set()
+        self.max_messages = max_messages
+        self.max_tool_output_chars = max_tool_output_chars
+
+    def append_message(self, message: dict) -> None:
+        self.messages.append(message)
+        self.compact()
+
+    def record_tool_call(
+        self,
+        step: int,
+        name: str,
+        arguments: str,
+        result: str,
+    ) -> str:
+        truncated_result = self.truncate_tool_output(result)
+
+        self.tool_steps.append(
+            {
+                "step": step,
+                "name": name,
+                "arguments": arguments,
+                "result": truncated_result,
+            }
+        )
+
+        if name == "read_file":
+            path = _extract_read_path(arguments)
+            if path:
+                self.read_files.add(path)
+
+        return truncated_result
+
+    def truncate_tool_output(self, text: str) -> str:
+        if len(text) <= self.max_tool_output_chars:
+            return text
+
+        return (
+            text[: self.max_tool_output_chars]
+            + f"\n\n[Tool output truncated to {self.max_tool_output_chars} characters]"
+        )
+
+    def compact(self) -> None:
+        self.messages = compact_messages(self.messages, self.max_messages)
+
+
 def build_initial_messages(user_question: str) -> list[dict]:
     return [
         {
@@ -49,3 +104,18 @@ def compact_messages(messages: list[dict], max_messages: int = 20) -> list[dict]
         return [system_messages[0], *recent_messages]
 
     return recent_messages
+
+
+def _extract_read_path(arguments: str) -> str | None:
+    import json
+
+    try:
+        data = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return None
+
+    path = data.get("path")
+    if isinstance(path, str):
+        return path
+
+    return None

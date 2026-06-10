@@ -1,5 +1,3 @@
-import asyncio
-
 from codepilot.config import CodePilotConfig
 
 
@@ -9,9 +7,7 @@ class LLMError(Exception):
 
 class LLMClient:
     """
-    OpenAI-compatible async LLM client.
-
-    Works with providers that support chat.completions.create.
+    OpenAI-compatible synchronous LLM client.
     """
 
     def __init__(self, config: CodePilotConfig):
@@ -23,18 +19,27 @@ class LLMClient:
             return
 
         try:
-            from openai import AsyncOpenAI
+            from openai import OpenAI
         except ModuleNotFoundError:
             self.enabled = False
             self.client = None
             return
 
-        self.client = AsyncOpenAI(
+        self.client = OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
         )
 
-    async def chat_completion(
+    def close(self) -> None:
+        if self.client is None:
+            return
+
+        close = getattr(self.client, "close", None)
+
+        if close is not None:
+            close()
+
+    def chat_completion(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
@@ -62,7 +67,7 @@ class LLMClient:
             kwargs["tool_choice"] = tool_choice
 
         try:
-            response = await self.client.chat.completions.create(**kwargs)
+            response = self.client.chat.completions.create(**kwargs)
         except Exception as e:
             raise LLMError(f"LLM request failed: {e}") from e
 
@@ -74,7 +79,7 @@ class LLMClient:
         except (AttributeError, IndexError) as e:
             raise LLMError(f"Unexpected LLM response format: {response}") from e
 
-    async def chat_text(
+    def chat_text(
         self,
         messages: list[dict],
         temperature: float = 0.2,
@@ -82,27 +87,11 @@ class LLMClient:
         """
         Compatibility helper for simple text-only calls.
         """
-        message = await self.chat_completion(
+        message = self.chat_completion(
             messages=messages,
             temperature=temperature,
         )
         return message.get("content") or ""
-
-
-async def chat_completion_async(
-    messages: list[dict],
-    config: CodePilotConfig,
-    tools: list[dict] | None = None,
-    tool_choice: str | dict | None = None,
-    temperature: float = 0.2,
-) -> dict:
-    client = LLMClient(config)
-    return await client.chat_completion(
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        temperature=temperature,
-    )
 
 
 def chat_completion(
@@ -113,22 +102,38 @@ def chat_completion(
     temperature: float = 0.2,
 ) -> dict:
     """
-    Synchronous wrapper for the async OpenAI-compatible client.
+    Synchronous wrapper for the OpenAI-compatible client.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(
-            chat_completion_async(
-                messages=messages,
-                config=config,
-                tools=tools,
-                tool_choice=tool_choice,
-                temperature=temperature,
-            )
-        )
+    client = LLMClient(config)
 
-    raise LLMError("chat_completion cannot be called synchronously inside a running event loop.")
+    try:
+        return client.chat_completion(
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+        )
+    finally:
+        client.close()
+
+
+async def chat_completion_async(
+    messages: list[dict],
+    config: CodePilotConfig,
+    tools: list[dict] | None = None,
+    tool_choice: str | dict | None = None,
+    temperature: float = 0.2,
+) -> dict:
+    """
+    Async-compatible wrapper for callers that still import this name.
+    """
+    return chat_completion(
+        messages=messages,
+        config=config,
+        tools=tools,
+        tool_choice=tool_choice,
+        temperature=temperature,
+    )
 
 
 def chat_text(

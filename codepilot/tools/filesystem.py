@@ -78,3 +78,39 @@ def read_text_file(path: str, max_chars: int = 12000) -> str:
         )
 
     return content
+
+
+def resolve_project_path(path: str, root: str = ".") -> Path:
+    """
+    Resolve a user path and ensure it stays inside the project root.
+    """
+    root_path = Path(root).resolve()
+    target_path = (root_path / path).resolve()
+
+    if target_path != root_path and root_path not in target_path.parents:
+        raise ValueError(f"Path is outside project root: {path}")
+
+    return target_path
+
+
+def create_directory(path: str, root: str = ".") -> str:
+    """
+    Create a directory inside the project root.
+    """
+    target_path = resolve_project_path(path, root=root)
+    target_path.mkdir(parents=True, exist_ok=True)
+    return f"Directory created: {Path(path).as_posix()}"
+
+
+def write_text_file(path: str, content: str, root: str = ".") -> str:
+    """
+    Write a UTF-8 text file inside the project root, creating parent directories.
+    """
+    target_path = resolve_project_path(path, root=root)
+
+    if target_path.exists() and target_path.is_dir():
+        raise IsADirectoryError(f"Path is a directory: {path}")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(content, encoding="utf-8")
+    return f"File written: {Path(path).as_posix()}"

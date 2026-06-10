@@ -1,14 +1,27 @@
 import json
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from codepilot.repo_map import build_repo_map
-from codepilot.tools.filesystem import list_project_files, read_text_file
+from codepilot.tools.filesystem import (
+    create_directory,
+    list_project_files,
+    read_text_file,
+    write_text_file,
+)
 from codepilot.tools.git import git_diff, git_status
 from codepilot.tools.search import grep_search
 from codepilot.tools.shell import run_tests
 
 
 MAX_TOOL_OUTPUT_CHARS = 12000
+
+
+@dataclass
+class ToolResult:
+    success: bool
+    content: str
+    error: str | None = None
 
 
 def truncate_text(text: str, max_chars: int = MAX_TOOL_OUTPUT_CHARS) -> str:
@@ -94,6 +107,14 @@ def tool_run_tests(command: str = "pytest") -> str:
     return truncate_text("\n".join(output))
 
 
+def tool_create_directory(path: str) -> str:
+    return create_directory(path)
+
+
+def tool_write_file(path: str, content: str) -> str:
+    return write_text_file(path, content)
+
+
 TOOL_HANDLERS: dict[str, Callable[..., str]] = {
     "list_files": tool_list_files,
     "read_file": tool_read_file,
@@ -102,6 +123,16 @@ TOOL_HANDLERS: dict[str, Callable[..., str]] = {
     "git_status": tool_git_status,
     "git_diff": tool_git_diff,
     "run_tests": tool_run_tests,
+    "create_directory": tool_create_directory,
+    "write_file": tool_write_file,
+}
+
+
+NO_ARGUMENT_TOOLS = {
+    "list_files",
+    "repo_map",
+    "git_status",
+    "git_diff",
 }
 
 
@@ -215,6 +246,44 @@ def get_tool_definitions() -> list[dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_directory",
+                "description": "Create a directory inside the current repository.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Relative directory path to create.",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write a UTF-8 text file inside the current repository, creating parent directories if needed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Relative file path to write.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Complete file content.",
+                        },
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        },
     ]
 
 
@@ -234,8 +303,67 @@ def execute_tool(name: str, arguments_json: str) -> str:
     handler = TOOL_HANDLERS[name]
 
     try:
+        if name in NO_ARGUMENT_TOOLS:
+            result = handler()
+            return truncate_text(str(result))
+
         result = handler(**arguments)
     except Exception as e:
         return f"Tool {name} failed: {type(e).__name__}: {e}"
 
     return truncate_text(str(result))
+
+
+def execute_tool_action(name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
+    """
+    Execute a tool from an agent JSON action.
+    """
+    if name not in TOOL_HANDLERS:
+        return ToolResult(
+            success=False,
+            content="",
+            error=f"Unknown tool: {name}",
+        )
+
+    handler = TOOL_HANDLERS[name]
+    arguments = arguments or {}
+
+    try:
+        if name in NO_ARGUMENT_TOOLS:
+            result = handler()
+        else:
+            result = handler(**arguments)
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content="",
+            error=f"Tool {name} failed: {type(e).__name__}: {e}",
+        )
+
+    return ToolResult(
+        success=True,
+        content=truncate_text(str(result)),
+    )
+
+
+def format_tools_for_prompt() -> str:
+    lines = []
+
+    for tool in get_tool_definitions():
+        function = tool["function"]
+        name = function["name"]
+        description = function["description"]
+        properties = function["parameters"].get("properties") or {}
+        required = set(function["parameters"].get("required") or [])
+
+        if properties:
+            args = ", ".join(
+                f"{arg}{'*' if arg in required else ''}: {spec.get('type', 'any')}"
+                for arg, spec in properties.items()
+            )
+        else:
+            args = "no arguments"
+
+        lines.append(f"- {name}({args}): {description}")
+
+    return "\n".join(lines)

@@ -8,6 +8,7 @@ class AgentContext:
     def __init__(
         self,
         user_question: str,
+        prior_messages: list[dict] | None = None,
         max_messages: int = 20,
         max_tool_output_chars: int = 12000,
     ):
@@ -17,15 +18,28 @@ class AgentContext:
                 "role": "system",
                 "content": SYSTEM_PROMPT,
             },
+        ]
+        self.messages.extend(prior_messages or [])
+        self.messages.append(
             {
                 "role": "user",
                 "content": user_question,
-            },
-        ]
+            }
+        )
         self.tool_steps: list[dict[str, Any]] = []
         self.read_files: set[str] = set()
+        self.changed_files: set[str] = set()
         self.max_messages = max_messages
         self.max_tool_output_chars = max_tool_output_chars
+
+    def add_user_message(self, content: str) -> None:
+        self.messages.append(
+            {
+                "role": "user",
+                "content": content,
+            }
+        )
+        self.compact()
 
     def add_assistant_message(self, message: dict) -> None:
         self.messages.append(message)
@@ -37,12 +51,21 @@ class AgentContext:
         tool_name: str,
         content: str,
     ) -> None:
+        self.add_observation_message(tool_name=tool_name, content=content)
+
+    def add_observation_message(
+        self,
+        tool_name: str,
+        content: str,
+    ) -> None:
         self.messages.append(
             {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": tool_name,
-                "content": self.truncate_tool_output(content),
+                "role": "user",
+                "content": (
+                    f"Observation from tool `{tool_name}`:\n"
+                    f"{self.truncate_tool_output(content)}\n\n"
+                    "Continue by returning the next JSON action."
+                ),
             }
         )
         self.compact()
@@ -73,6 +96,11 @@ class AgentContext:
             if isinstance(path, str):
                 self.read_files.add(path)
 
+        if name in {"write_file", "create_directory"} and success:
+            path = parsed_arguments.get("path")
+            if isinstance(path, str):
+                self.changed_files.add(path)
+
         return step
 
     def truncate_tool_output(self, text: str) -> str:
@@ -99,7 +127,7 @@ class AgentContext:
             "messages": self.messages,
             "tool_steps": self.tool_steps,
             "read_files": sorted(self.read_files),
-            "changed_files": changed_files or [],
+            "changed_files": changed_files or sorted(self.changed_files),
             "test_result": test_result,
         }
 

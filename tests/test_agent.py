@@ -1,36 +1,37 @@
 from codepilot.agent import CodePilotAgent
 from codepilot.config import CodePilotConfig
+from codepilot.tools.registry import ToolResult
 
 
-def test_agent_executes_tool_call_and_returns_final_answer(monkeypatch, capsys):
+def test_agent_executes_tool_action_and_returns_final_answer(monkeypatch, capsys):
     responses = [
         {
             "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "",
-                    "type": "function",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": '{"path": "pyproject.toml"}',
-                    },
-                }
-            ],
+            "content": (
+                '{"action":"tool","tool_name":"read_file",'
+                '"arguments":{"path":"pyproject.toml"}}'
+            ),
         },
         {
             "role": "assistant",
-            "content": "Entry point is codepilot.cli:app.",
+            "content": (
+                '{"action":"final","answer":"Entry point is codepilot.cli:app."}'
+            ),
         },
     ]
 
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
+    def fake_execute_tool_action(name, arguments):
+        assert name == "read_file"
+        assert arguments == {"path": "pyproject.toml"}
+        return ToolResult(success=True, content="codepilot = 'codepilot.cli:app'")
+
     monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
     monkeypatch.setattr(
-        "codepilot.agent.execute_tool",
-        lambda name, args: "codepilot = 'codepilot.cli:app'",
+        "codepilot.agent.execute_tool_action",
+        fake_execute_tool_action,
     )
 
     agent = CodePilotAgent(
@@ -52,32 +53,25 @@ def test_agent_limits_repeated_repo_map_calls(monkeypatch):
     responses = [
         {
             "role": "assistant",
-            "tool_calls": [
-                {
-                    "id": "one",
-                    "type": "function",
-                    "function": {"name": "repo_map", "arguments": "{}"},
-                },
-                {
-                    "id": "two",
-                    "type": "function",
-                    "function": {"name": "repo_map", "arguments": "{}"},
-                },
-            ],
+            "content": '{"action":"tool","tool_name":"repo_map","arguments":{}}',
         },
-        {"role": "assistant", "content": "done"},
+        {
+            "role": "assistant",
+            "content": '{"action":"tool","tool_name":"repo_map","arguments":{}}',
+        },
+        {"role": "assistant", "content": '{"action":"final","answer":"done"}'},
     ]
     executed = []
 
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
-    def fake_execute_tool(name, args):
+    def fake_execute_tool_action(name, arguments):
         executed.append(name)
-        return "map"
+        return ToolResult(success=True, content="map")
 
     monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
-    monkeypatch.setattr("codepilot.agent.execute_tool", fake_execute_tool)
+    monkeypatch.setattr("codepilot.agent.execute_tool_action", fake_execute_tool_action)
 
     agent = CodePilotAgent(
         config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
@@ -87,44 +81,39 @@ def test_agent_limits_repeated_repo_map_calls(monkeypatch):
 
     assert agent.run("map?").answer == "done"
     assert executed == ["repo_map"]
+    assert agent.last_context is not None
+    assert agent.last_context.tool_steps[1]["success"] is False
 
 
 def test_agent_limits_read_file_calls_per_run(monkeypatch):
     responses = [
         {
             "role": "assistant",
-            "tool_calls": [
-                {
-                    "id": "one",
-                    "type": "function",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": '{"path": "one.py"}',
-                    },
-                },
-                {
-                    "id": "two",
-                    "type": "function",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": '{"path": "two.py"}',
-                    },
-                },
-            ],
+            "content": (
+                '{"action":"tool","tool_name":"read_file",'
+                '"arguments":{"path":"one.py"}}'
+            ),
         },
-        {"role": "assistant", "content": "done"},
+        {
+            "role": "assistant",
+            "content": (
+                '{"action":"tool","tool_name":"read_file",'
+                '"arguments":{"path":"two.py"}}'
+            ),
+        },
+        {"role": "assistant", "content": '{"action":"final","answer":"done"}'},
     ]
     executed = []
 
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
-    def fake_execute_tool(name, args):
-        executed.append(args)
-        return "content"
+    def fake_execute_tool_action(name, arguments):
+        executed.append(arguments)
+        return ToolResult(success=True, content="content")
 
     monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
-    monkeypatch.setattr("codepilot.agent.execute_tool", fake_execute_tool)
+    monkeypatch.setattr("codepilot.agent.execute_tool_action", fake_execute_tool_action)
 
     agent = CodePilotAgent(
         config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
@@ -135,7 +124,57 @@ def test_agent_limits_read_file_calls_per_run(monkeypatch):
     result = agent.run("read?")
 
     assert result.answer == "done"
-    assert executed == ['{"path": "one.py"}']
+    assert executed == [{"path": "one.py"}]
     assert result.session["read_files"] == ["one.py"]
     assert agent.last_context is not None
     assert agent.last_context.tool_steps[1]["success"] is False
+
+
+def test_agent_recovers_from_invalid_json_response(monkeypatch):
+    responses = [
+        {"role": "assistant", "content": "not json"},
+        {"role": "assistant", "content": '{"action":"final","answer":"done"}'},
+    ]
+
+    def fake_chat_completion(**kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
+
+    agent = CodePilotAgent(
+        config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
+        show_tool_calls=False,
+    )
+
+    result = agent.run("hello")
+
+    assert result.answer == "done"
+    assert result.session["tool_steps"] == []
+
+
+def test_agent_remembers_previous_chat_turn(monkeypatch):
+    captured_messages = []
+    responses = [
+        {"role": "assistant", "content": '{"action":"final","answer":"first answer"}'},
+        {"role": "assistant", "content": '{"action":"final","answer":"second answer"}'},
+    ]
+
+    def fake_chat_completion(**kwargs):
+        captured_messages.append(kwargs["messages"])
+        return responses.pop(0)
+
+    monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
+
+    agent = CodePilotAgent(
+        config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
+        show_tool_calls=False,
+    )
+
+    assert agent.run("first question").answer == "first answer"
+    assert agent.run("what did I ask before?").answer == "second answer"
+
+    second_turn_content = "\n".join(
+        message["content"] for message in captured_messages[1]
+    )
+    assert "first question" in second_turn_content
+    assert "first answer" in second_turn_content

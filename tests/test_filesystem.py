@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from codepilot.tools.filesystem import list_project_files, read_text_file
+from codepilot.tools.filesystem import (
+    create_directory,
+    list_project_files,
+    read_text_file,
+    write_text_file,
+)
 
 
 def test_list_project_files_skips_runtime_dirs(tmp_path: Path):
@@ -28,3 +33,14 @@ def test_read_text_file_truncates_content(tmp_path: Path):
 def test_read_text_file_rejects_directories(tmp_path: Path):
     with pytest.raises(IsADirectoryError):
         read_text_file(str(tmp_path))
+
+
+def test_write_text_file_creates_parent_directories(tmp_path: Path):
+    write_text_file("examples/bubble_sort.py", "print('ok')\n", root=str(tmp_path))
+
+    assert (tmp_path / "examples" / "bubble_sort.py").read_text(encoding="utf-8") == "print('ok')\n"
+
+
+def test_create_directory_rejects_paths_outside_project(tmp_path: Path):
+    with pytest.raises(ValueError):
+        create_directory("../outside", root=str(tmp_path))

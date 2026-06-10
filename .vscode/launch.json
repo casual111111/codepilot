@@ -1,0 +1,114 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "CodePilot CLI: custom",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "${input:command}",
+                "${input:filePath}"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "CodePilot CLI: version",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "version"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: ask",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "ask",
+                "Hello, CodePilot"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: chat",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "chat"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: files",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "files"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: read file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "read",
+                "${input:fileToRead}"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        }
+    ],
+    "inputs": [
+        {
+            "id": "command",
+            "type": "pickString",
+            "description": "Choose CodePilot command",
+            "options": [
+                "read",
+                "ask"
+            ],
+            "default": "read"
+        },
+        {
+            "id": "filePath",
+            "type": "promptString",
+            "description": "File path for read, or question for ask",
+            "default": "codepilot/cli.py"
+        },
+        {
+            "id": "fileToRead",
+            "type": "promptString",
+            "description": "File path to read",
+            "default": "codepilot/cli.py"
+        }
+    ]
+}

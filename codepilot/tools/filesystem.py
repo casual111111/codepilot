@@ -34,12 +34,10 @@ def list_project_files(root: str = ".") -> list[str]:
     Recursively list project files under root.
     Returns relative paths using '/' as separator.
     """
-    #获取绝对路径
     root_path = Path(root).resolve()
     files: list[str] = []
 
     for path in root_path.rglob("*"):
-        #不保存目录
         if not path.is_file():
             continue
 

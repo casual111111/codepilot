@@ -85,6 +85,68 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: map",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "map"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: grep",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "grep",
+                "${input:grepQuery}"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: status",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "status"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: diff",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "diff"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CodePilot CLI: test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/codepilot/cli.py",
+            "args": [
+                "test",
+                "${input:testCommand}"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
         }
     ],
     "inputs": [
@@ -94,7 +156,12 @@
             "description": "Choose CodePilot command",
             "options": [
                 "read",
-                "ask"
+                "ask",
+                "map",
+                "grep",
+                "status",
+                "diff",
+                "test"
             ],
             "default": "read"
         },
@@ -109,6 +176,18 @@
             "type": "promptString",
             "description": "File path to read",
             "default": "codepilot/cli.py"
+        },
+        {
+            "id": "grepQuery",
+            "type": "promptString",
+            "description": "Keyword to search",
+            "default": "Typer"
+        },
+        {
+            "id": "testCommand",
+            "type": "promptString",
+            "description": "Test command to run",
+            "default": "pytest"
         }
     ]
 }

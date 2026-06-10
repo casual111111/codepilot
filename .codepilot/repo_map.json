@@ -1,0 +1,133 @@
+{
+  "root": "C:\\Users\\15207\\Desktop\\ai 学习\\codepilot",
+  "file_count": 16,
+  "files": [
+    {
+      "path": ".env.example",
+      "language": "text",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": ".gitignore",
+      "language": "text",
+      "size": 94,
+      "symbols": []
+    },
+    {
+      "path": ".vscode/launch.json",
+      "language": "json",
+      "size": 5843,
+      "symbols": []
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/__init__.py",
+      "language": "python",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/agent.py",
+      "language": "python",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/cli.py",
+      "language": "python",
+      "size": 5030,
+      "symbols": [
+        "detect_language",
+        "version",
+        "ask",
+        "chat",
+        "files",
+        "read",
+        "build_map",
+        "grep",
+        "status",
+        "diff",
+        "test"
+      ]
+    },
+    {
+      "path": "codepilot/config.py",
+      "language": "python",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/repo_map.py",
+      "language": "python",
+      "size": 2703,
+      "symbols": [
+        "detect_language",
+        "extract_python_symbols",
+        "build_repo_map",
+        "save_repo_map",
+        "load_repo_map"
+      ]
+    },
+    {
+      "path": "codepilot/session.py",
+      "language": "python",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/tools/__init__.py",
+      "language": "python",
+      "size": 0,
+      "symbols": []
+    },
+    {
+      "path": "codepilot/tools/filesystem.py",
+      "language": "python",
+      "size": 1674,
+      "symbols": [
+        "list_project_files",
+        "read_text_file"
+      ]
+    },
+    {
+      "path": "codepilot/tools/git.py",
+      "language": "python",
+      "size": 1142,
+      "symbols": [
+        "run_git_command",
+        "git_status",
+        "git_diff",
+        "git_diff_cached"
+      ]
+    },
+    {
+      "path": "codepilot/tools/search.py",
+      "language": "python",
+      "size": 926,
+      "symbols": [
+        "grep_search"
+      ]
+    },
+    {
+      "path": "codepilot/tools/shell.py",
+      "language": "python",
+      "size": 950,
+      "symbols": [
+        "run_command",
+        "run_tests"
+      ]
+    },
+    {
+      "path": "pyproject.toml",
+      "language": "toml",
+      "size": 371,
+      "symbols": []
+    }
+  ]
+}

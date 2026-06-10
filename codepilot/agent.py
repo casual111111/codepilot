@@ -2,8 +2,8 @@ import json
 
 from rich.console import Console
 
+from codepilot.agent_context import AgentContext
 from codepilot.config import CodePilotConfig
-from codepilot.context import AgentContext
 from codepilot.llm import LLMError, chat_completion
 from codepilot.tools.registry import execute_tool, get_tool_definitions
 
@@ -20,10 +20,12 @@ class CodePilotAgent:
         config: CodePilotConfig,
         max_turns: int = 8,
         max_tool_calls_per_name: dict[str, int] | None = None,
+        max_read_file_per_run: int = 12,
         show_tool_calls: bool = True,
     ):
         self.config = config
         self.max_turns = max_turns
+        self.max_read_file_per_run = max_read_file_per_run
         self.max_tool_calls_per_name = max_tool_calls_per_name or {
             "repo_map": 1,
             "list_files": 2,
@@ -40,8 +42,8 @@ class CodePilotAgent:
     def run(self, user_question: str) -> str:
         context = AgentContext(user_question=user_question)
         self.last_context = context
-        step = 0
         tool_call_counts: dict[str, int] = {}
+        read_file_count = 0
 
         for turn in range(1, self.max_turns + 1):
             context.compact()
@@ -56,7 +58,7 @@ class CodePilotAgent:
             except LLMError as e:
                 raise AgentRuntimeError(str(e)) from e
 
-            context.append_message(assistant_message)
+            context.add_assistant_message(assistant_message)
 
             tool_calls = assistant_message.get("tool_calls") or []
 
@@ -73,12 +75,7 @@ class CodePilotAgent:
                     continue
 
                 if not tool_call_id:
-                    tool_call_id = f"tool-call-{turn}-{step + 1}"
-
-                step += 1
-
-                if self.show_tool_calls:
-                    console.print(f"[Step {step}] {tool_name} {_format_arguments(tool_args)}")
+                    tool_call_id = f"tool-call-{turn}-{len(context.tool_steps) + 1}"
 
                 tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
                 max_calls = self.max_tool_calls_per_name.get(tool_name, 3)
@@ -88,23 +85,32 @@ class CodePilotAgent:
                         f"Tool {tool_name} skipped: call limit reached "
                         f"({max_calls}). Use existing context or choose a different tool."
                     )
+                elif tool_name == "read_file" and read_file_count >= self.max_read_file_per_run:
+                    tool_result = (
+                        "Tool read_file skipped: max_read_file_per_run reached "
+                        f"({self.max_read_file_per_run}). Use already-read files or grep_search."
+                    )
                 else:
                     tool_result = execute_tool(tool_name, tool_args)
+                    if tool_name == "read_file":
+                        read_file_count += 1
 
-                tool_result = context.record_tool_call(
-                    step=step,
+                tool_result = context.truncate_tool_output(tool_result)
+                success = _tool_succeeded(tool_result)
+                step = context.add_tool_step(
                     name=tool_name,
                     arguments=tool_args,
                     result=tool_result,
+                    success=success,
                 )
 
-                context.append_message(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "name": tool_name,
-                        "content": tool_result,
-                    }
+                if self.show_tool_calls:
+                    console.print(f"[Step {step}] {tool_name} {_format_arguments(tool_args)}")
+
+                context.add_tool_message(
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    content=tool_result,
                 )
 
         return (
@@ -120,3 +126,12 @@ def _format_arguments(arguments_json: str) -> str:
         return arguments_json
 
     return json.dumps(arguments, ensure_ascii=False)
+
+
+def _tool_succeeded(result: str) -> bool:
+    failure_prefixes = (
+        "Unknown tool:",
+        "Invalid tool arguments JSON:",
+        "Tool ",
+    )
+    return not result.startswith(failure_prefixes)

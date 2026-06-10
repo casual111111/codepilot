@@ -42,7 +42,8 @@ def test_agent_executes_tool_call_and_returns_final_answer(monkeypatch, capsys):
     assert answer == "Entry point is codepilot.cli:app."
     assert "[Step 1] read_file" in capsys.readouterr().out
     assert agent.last_context is not None
-    assert agent.last_context.tool_steps[0]["name"] == "read_file"
+    assert agent.last_context.tool_steps[0]["tool"] == "read_file"
+    assert agent.last_context.tool_steps[0]["success"] is True
 
 
 def test_agent_limits_repeated_repo_map_calls(monkeypatch):
@@ -84,3 +85,52 @@ def test_agent_limits_repeated_repo_map_calls(monkeypatch):
 
     assert agent.run("map?") == "done"
     assert executed == ["repo_map"]
+
+
+def test_agent_limits_read_file_calls_per_run(monkeypatch):
+    responses = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "one",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"path": "one.py"}',
+                    },
+                },
+                {
+                    "id": "two",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"path": "two.py"}',
+                    },
+                },
+            ],
+        },
+        {"role": "assistant", "content": "done"},
+    ]
+    executed = []
+
+    def fake_chat_completion(**kwargs):
+        return responses.pop(0)
+
+    def fake_execute_tool(name, args):
+        executed.append(args)
+        return "content"
+
+    monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
+    monkeypatch.setattr("codepilot.agent.execute_tool", fake_execute_tool)
+
+    agent = CodePilotAgent(
+        config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
+        max_read_file_per_run=1,
+        show_tool_calls=False,
+    )
+
+    assert agent.run("read?") == "done"
+    assert executed == ['{"path": "one.py"}']
+    assert agent.last_context is not None
+    assert agent.last_context.tool_steps[1]["success"] is False

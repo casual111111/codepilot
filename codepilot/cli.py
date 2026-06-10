@@ -49,12 +49,20 @@ def version():
 
 
 @app.command()
-def ask(question: str):
+def ask(
+    question: str,
+    max_turns: int = typer.Option(8, "--max-turns", min=1),
+    tools_log: bool = typer.Option(True, "--tools-log/--no-tools-log"),
+):
     """Ask an agentic question about the current repository."""
     console.print(Panel.fit(question, title="Your Question"))
 
     config = load_config()
-    agent = CodePilotAgent(config=config)
+    agent = CodePilotAgent(
+        config=config,
+        max_turns=max_turns,
+        show_tool_calls=tools_log,
+    )
 
     try:
         answer = agent.run(question)
@@ -62,16 +70,24 @@ def ask(question: str):
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(code=1)
 
+    save_agent_session(agent, changed_files=[], test_result=None)
     console.print(Panel.fit(answer, title="CodePilot"))
 
 
 @app.command()
-def chat():
+def chat(
+    max_turns: int = typer.Option(8, "--max-turns", min=1),
+    tools_log: bool = typer.Option(True, "--tools-log/--no-tools-log"),
+):
     """Start an interactive agent chat session."""
     console.print(Panel.fit("Welcome to CodePilot CLI", title="CodePilot"))
 
     config = load_config()
-    agent = CodePilotAgent(config=config)
+    agent = CodePilotAgent(
+        config=config,
+        max_turns=max_turns,
+        show_tool_calls=tools_log,
+    )
 
     while True:
         user_input = typer.prompt("You")
@@ -86,6 +102,7 @@ def chat():
             console.print(f"[red]{e}[/red]")
             continue
 
+        save_agent_session(agent, changed_files=[], test_result=None)
         console.print(Panel.fit(answer, title="CodePilot"))
 
 
@@ -346,6 +363,24 @@ def resume(session_id: str):
         word_wrap=True,
     )
     console.print(syntax)
+
+
+def save_agent_session(
+    agent: CodePilotAgent,
+    changed_files: list[str],
+    test_result: dict | None,
+) -> str | None:
+    if agent.last_context is None:
+        return None
+
+    session_id = create_session_id()
+    session = agent.last_context.to_session_dict(
+        session_id=session_id,
+        changed_files=changed_files,
+        test_result=test_result,
+    )
+    save_session(session)
+    return session_id
 
 
 if __name__ == "__main__":

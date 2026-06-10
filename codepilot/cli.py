@@ -1,5 +1,7 @@
 from pathlib import Path
+import difflib
 import json
+import re
 
 import typer
 from rich.console import Console
@@ -7,7 +9,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
-from codepilot.agent import AgentRuntimeError, CodePilotAgent
+from codepilot.agent import AgentResult, AgentRuntimeError, CodePilotAgent
 from codepilot.config import load_config
 from codepilot.llm import LLMError
 from codepilot.repo_map import save_repo_map
@@ -41,6 +43,214 @@ def detect_language(path: str) -> str:
         return "yaml"
 
     return "text"
+
+
+def collect_edit_context(instruction: str) -> AgentResult:
+    """Use the agent to inspect files relevant to an edit request."""
+    config = load_config()
+    agent = CodePilotAgent(config=config)
+    context_question = (
+        "You are collecting context for a code edit. "
+        "Use repo_map, grep_search, and read_file to identify and read every file "
+        "needed to safely implement the request. "
+        "Do not propose a patch. Finish with a concise summary of the files read.\n\n"
+        f"Edit request:\n{instruction}"
+    )
+    return agent.run(context_question)
+
+
+def read_edit_files(paths: list[str]) -> dict[str, str]:
+    files: dict[str, str] = {}
+
+    for path in paths:
+        file_path = Path(path)
+
+        if not file_path.is_file():
+            continue
+
+        files[path] = file_path.read_text(encoding="utf-8", errors="replace")
+
+    return files
+
+
+def format_edit_files(files: dict[str, str]) -> str:
+    sections: list[str] = []
+
+    for path, content in files.items():
+        sections.append(
+            f"--- FILE: {path} ---\n"
+            f"{content}\n"
+            f"--- END FILE: {path} ---"
+        )
+
+    return "\n\n".join(sections)
+
+
+def build_edit_messages(
+    edit_prompt: str,
+    instruction: str,
+    file_contents: dict[str, str],
+    current_diff: str,
+    previous_patch: str | None = None,
+    patch_error: str | None = None,
+) -> list[dict]:
+    retry_context = ""
+
+    if previous_patch is not None and patch_error is not None:
+        retry_context = (
+            "\n\nPrevious patch failed git apply --check.\n"
+            f"Previous patch:\n{previous_patch}\n\n"
+            f"git apply --check output:\n{patch_error}\n\n"
+            "Generate a corrected unified diff using only the provided files."
+        )
+
+    return [
+        {"role": "system", "content": edit_prompt},
+        {
+            "role": "user",
+            "content": (
+                f"User request:\n{instruction}\n\n"
+                f"Provided file contents:\n{format_edit_files(file_contents)}\n\n"
+                f"Current unstaged diff:\n{current_diff}\n"
+                f"{retry_context}"
+            ),
+        },
+    ]
+
+
+def normalize_patch(patch: str) -> str:
+    patch = patch.strip()
+    lines = patch.splitlines()
+
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+
+    normalized_lines: list[str] = []
+    hunk_header_pattern = re.compile(r"^(@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@) (.+)$")
+
+    for line in lines:
+        match = hunk_header_pattern.match(line)
+
+        if match:
+            normalized_lines.append(match.group(1))
+            normalized_lines.append(f" {match.group(2)}")
+            continue
+
+        normalized_lines.append(line)
+
+    return "\n".join(normalized_lines).strip() + "\n"
+
+
+def rebuild_patch_from_contents(patch: str, file_contents: dict[str, str]) -> str | None:
+    patched_files: dict[str, str] = {}
+    current_path: str | None = None
+    hunk_lines: list[str] = []
+
+    def flush_hunk() -> bool:
+        if current_path is None or not hunk_lines:
+            return True
+
+        original = patched_files.get(current_path, file_contents.get(current_path))
+
+        if original is None:
+            return False
+
+        updated = apply_hunk_to_text(original, hunk_lines)
+
+        if updated is None:
+            return False
+
+        patched_files[current_path] = updated
+        hunk_lines.clear()
+        return True
+
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            if not flush_hunk():
+                return None
+
+            current_path = line.removeprefix("+++ b/")
+            continue
+
+        if line.startswith("@@ "):
+            if not flush_hunk():
+                return None
+            continue
+
+        if current_path is not None and line[:1] in {" ", "+", "-"}:
+            if line.startswith("--- "):
+                continue
+
+            hunk_lines.append(line)
+
+    if not flush_hunk():
+        return None
+
+    diff_parts: list[str] = []
+
+    for path, updated in patched_files.items():
+        original = file_contents.get(path)
+
+        if original is None or original == updated:
+            continue
+
+        diff_parts.extend(
+            difflib.unified_diff(
+                original.splitlines(keepends=True),
+                updated.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+            )
+        )
+
+    if not diff_parts:
+        return None
+
+    return "".join(diff_parts)
+
+
+def apply_hunk_to_text(text: str, hunk_lines: list[str]) -> str | None:
+    original_lines = text.splitlines(keepends=True)
+    old_lines: list[str] = []
+    new_lines: list[str] = []
+
+    for line in hunk_lines:
+        marker = line[0]
+        content = line[1:] + "\n"
+
+        if marker == " ":
+            old_lines.append(content)
+            new_lines.append(content)
+        elif marker == "-":
+            old_lines.append(content)
+        elif marker == "+":
+            new_lines.append(content)
+
+    start = find_subsequence(original_lines, old_lines)
+
+    if start is None:
+        return None
+
+    updated_lines = (
+        original_lines[:start]
+        + new_lines
+        + original_lines[start + len(old_lines) :]
+    )
+    return "".join(updated_lines)
+
+
+def find_subsequence(lines: list[str], sequence: list[str]) -> int | None:
+    if not sequence:
+        return None
+
+    for index in range(len(lines) - len(sequence) + 1):
+        if lines[index : index + len(sequence)] == sequence:
+            return index
+
+    return None
 
 
 @app.command()
@@ -245,72 +455,157 @@ def test(command: str = typer.Argument("pytest")):
 def edit(
     instruction: str,
     test_command: str = typer.Option("pytest", "--test-command", "-t"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    retries: int = typer.Option(1, "--retries", min=0),
 ):
     """Generate a patch for a requested code change and apply it after confirmation."""
     config = load_config()
     prompt_path = Path(__file__).parent / "prompts" / "edit.md"
     edit_prompt = prompt_path.read_text(encoding="utf-8")
-    repo_map = save_repo_map(".")
-    current_diff = git_diff()
-
-    messages = [
-        {"role": "system", "content": edit_prompt},
-        {
-            "role": "user",
-            "content": (
-                f"User request:\n{instruction}\n\n"
-                f"Repo map:\n{repo_map}\n\n"
-                f"Current unstaged diff:\n{current_diff}\n"
-            ),
-        },
-    ]
 
     try:
-        patch = generate_patch(messages=messages, config=config)
-    except LLMError as e:
+        context_result = collect_edit_context(instruction)
+    except AgentRuntimeError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(code=1)
 
-    patch = patch.strip()
+    read_files = context_result.session.get("read_files") or []
 
-    if not patch:
-        console.print("[yellow]No patch generated.[/yellow]")
+    if not read_files:
+        console.print("[yellow]Could not determine relevant files to edit.[/yellow]")
         raise typer.Exit(code=1)
+
+    file_contents = read_edit_files(read_files)
+
+    if not file_contents:
+        console.print("[yellow]Could not read any relevant files to edit.[/yellow]")
+        raise typer.Exit(code=1)
+
+    current_diff = git_diff()
+    messages = build_edit_messages(
+        edit_prompt=edit_prompt,
+        instruction=instruction,
+        file_contents=file_contents,
+        current_diff=current_diff,
+    )
+    patch = ""
+    check_result: dict | None = None
+
+    for attempt in range(retries + 1):
+        try:
+            patch = normalize_patch(generate_patch(messages=messages, config=config))
+        except LLMError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(code=1)
+
+        if not patch:
+            console.print("[yellow]No patch generated.[/yellow]")
+            raise typer.Exit(code=1)
+
+        check_result = apply_patch(
+            patch,
+            check=True,
+            ignore_whitespace=True,
+            recount=True,
+        )
+
+        if check_result["returncode"] == 0:
+            break
+
+        rebuilt_patch = rebuild_patch_from_contents(patch, file_contents)
+
+        if rebuilt_patch:
+            rebuilt_check_result = apply_patch(
+                rebuilt_patch,
+                check=True,
+                ignore_whitespace=True,
+                recount=True,
+            )
+
+            if rebuilt_check_result["returncode"] == 0:
+                patch = rebuilt_patch
+                check_result = rebuilt_check_result
+                break
+
+        if attempt >= retries:
+            break
+
+        console.print("[yellow]Patch check failed. Retrying...[/yellow]")
+        messages = build_edit_messages(
+            edit_prompt=edit_prompt,
+            instruction=instruction,
+            file_contents=file_contents,
+            current_diff=current_diff,
+            previous_patch=patch,
+            patch_error=check_result["stderr"] or check_result["stdout"],
+        )
 
     syntax = Syntax(patch, "diff", line_numbers=True, word_wrap=True)
     console.print(Panel.fit("Generated Patch", title="CodePilot Edit"))
     console.print(syntax)
 
-    check_result = apply_patch(patch, check=True)
-    if check_result["returncode"] != 0:
-        console.print("[red]Patch failed git apply --check.[/red]")
-        console.print(check_result["stderr"] or check_result["stdout"])
-        raise typer.Exit(code=1)
+    if check_result is None:
+        check_result = apply_patch(
+            patch,
+            check=True,
+            ignore_whitespace=True,
+            recount=True,
+        )
 
-    if not typer.confirm("Apply this patch?", default=False):
-        console.print("[yellow]Patch not applied.[/yellow]")
-        raise typer.Exit(code=1)
-
-    apply_result = apply_patch(patch)
-    if apply_result["returncode"] != 0:
-        console.print("[red]Patch apply failed.[/red]")
-        console.print(apply_result["stderr"] or apply_result["stdout"])
-        raise typer.Exit(code=1)
-
-    test_result = run_tests(test_command)
     changed_files = extract_changed_files(patch)
     session = {
         "session_id": create_session_id(),
         "question": instruction,
+        "instruction": instruction,
         "messages": messages,
-        "tool_steps": [],
-        "read_files": [],
+        "tool_steps": context_result.session.get("tool_steps", []),
+        "edit_context_session": context_result.session,
+        "read_files": list(file_contents.keys()),
         "changed_files": changed_files,
-        "test_result": {
-            "command": test_result["command"],
-            "returncode": test_result["returncode"],
-            "timed_out": test_result["timed_out"],
+        "test_result": None,
+        "patch_check_result": {
+            "command": check_result["command"],
+            "returncode": check_result["returncode"],
+            "stdout": check_result["stdout"],
+            "stderr": check_result["stderr"],
         },
+    }
+
+    if check_result["returncode"] != 0:
+        console.print("[red]Patch failed git apply --check.[/red]")
+        console.print(check_result["stderr"] or check_result["stdout"])
+        save_session(session)
+        raise typer.Exit(code=1)
+
+    console.print("[green]Patch passed git apply --check.[/green]")
+
+    if dry_run:
+        save_session(session)
+        console.print(f"Session: {session['session_id']}")
+        return
+
+    if not typer.confirm("Apply this patch?", default=False):
+        console.print("[yellow]Patch not applied.[/yellow]")
+        save_session(session)
+        console.print(f"Session: {session['session_id']}")
+        raise typer.Exit(code=1)
+
+    apply_result = apply_patch(
+        patch,
+        ignore_whitespace=True,
+        recount=True,
+    )
+    if apply_result["returncode"] != 0:
+        console.print("[red]Patch apply failed.[/red]")
+        console.print(apply_result["stderr"] or apply_result["stdout"])
+        save_session(session)
+        raise typer.Exit(code=1)
+
+    test_result = run_tests(test_command)
+    session["test_result"] = {
+        "command": test_result["command"],
+        "returncode": test_result["returncode"],
+        "timed_out": test_result["timed_out"],
     }
     save_session(session)
 

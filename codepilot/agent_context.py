@@ -68,7 +68,7 @@ class AgentContext:
             }
         )
 
-        if name == "read_file":
+        if name == "read_file" and success:
             path = parsed_arguments.get("path")
             if isinstance(path, str):
                 self.read_files.add(path)
@@ -89,7 +89,7 @@ class AgentContext:
 
     def to_session_dict(
         self,
-        session_id: str,
+        session_id: str | None = None,
         changed_files: list[str] | None = None,
         test_result: dict | None = None,
     ) -> dict:

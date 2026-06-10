@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import typer
 from rich.console import Console
@@ -65,13 +66,14 @@ def ask(
     )
 
     try:
-        answer = agent.run(question)
+        result = agent.run(question)
     except AgentRuntimeError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(code=1)
 
-    save_agent_session(agent, changed_files=[], test_result=None)
-    console.print(Panel.fit(answer, title="CodePilot"))
+    console.print(Panel.fit(result.answer, title="CodePilot"))
+    session_path = save_session(result.session)
+    console.print(f"[dim]Session saved: {session_path}[/dim]")
 
 
 @app.command()
@@ -97,13 +99,14 @@ def chat(
             break
 
         try:
-            answer = agent.run(user_input)
+            result = agent.run(user_input)
         except AgentRuntimeError as e:
             console.print(f"[red]{e}[/red]")
             continue
 
-        save_agent_session(agent, changed_files=[], test_result=None)
-        console.print(Panel.fit(answer, title="CodePilot"))
+        console.print(Panel.fit(result.answer, title="CodePilot"))
+        session_path = save_session(result.session)
+        console.print(f"[dim]Session saved: {session_path}[/dim]")
 
 
 @app.command()
@@ -328,23 +331,51 @@ def history():
         console.print("[yellow]No sessions found.[/yellow]")
         return
 
-    table = Table(title="CodePilot Sessions")
-    table.add_column("Session")
+    table = Table(title="Recent Sessions")
+    table.add_column("Session ID")
     table.add_column("Question")
-    table.add_column("Changed Files")
-    table.add_column("Test")
+    table.add_column("Tool Steps", justify="right")
+    table.add_column("Read Files", justify="right")
 
     for session in sessions:
-        test_result = session.get("test_result") or {}
-        returncode = test_result.get("returncode", "")
         table.add_row(
             session["session_id"],
             session["question"],
-            ", ".join(session.get("changed_files") or []),
-            str(returncode),
+            str(len(session.get("tool_steps") or [])),
+            str(len(session.get("read_files") or [])),
         )
 
     console.print(table)
+
+
+@app.command("show-session")
+def show_session(session_id: str):
+    """Show a saved CodePilot session trace."""
+    try:
+        session = load_session(session_id)
+    except FileNotFoundError:
+        console.print(f"[red]Session not found:[/red] {session_id}")
+        raise typer.Exit(code=1)
+
+    console.print("[bold]Question:[/bold]")
+    console.print(session.get("question", ""))
+
+    console.print("\n[bold]Tool Steps:[/bold]")
+    tool_steps = session.get("tool_steps") or []
+    if not tool_steps:
+        console.print("[dim]None[/dim]")
+    else:
+        for step in tool_steps:
+            arguments = json.dumps(step.get("arguments") or {}, ensure_ascii=False)
+            console.print(f"{step.get('step')}. {step.get('tool')} {arguments}")
+
+    console.print("\n[bold]Read Files:[/bold]")
+    read_files = session.get("read_files") or []
+    if not read_files:
+        console.print("[dim]None[/dim]")
+    else:
+        for path in read_files:
+            console.print(f"- {path}")
 
 
 @app.command()
@@ -363,24 +394,6 @@ def resume(session_id: str):
         word_wrap=True,
     )
     console.print(syntax)
-
-
-def save_agent_session(
-    agent: CodePilotAgent,
-    changed_files: list[str],
-    test_result: dict | None,
-) -> str | None:
-    if agent.last_context is None:
-        return None
-
-    session_id = create_session_id()
-    session = agent.last_context.to_session_dict(
-        session_id=session_id,
-        changed_files=changed_files,
-        test_result=test_result,
-    )
-    save_session(session)
-    return session_id
 
 
 if __name__ == "__main__":

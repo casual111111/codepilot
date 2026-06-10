@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 
 from rich.console import Console
 
@@ -12,6 +13,12 @@ console = Console()
 
 class AgentRuntimeError(Exception):
     pass
+
+
+@dataclass
+class AgentResult:
+    answer: str
+    session: dict
 
 
 class CodePilotAgent:
@@ -39,7 +46,7 @@ class CodePilotAgent:
         self.tools = get_tool_definitions()
         self.last_context: AgentContext | None = None
 
-    def run(self, user_question: str) -> str:
+    def run(self, user_question: str) -> AgentResult:
         context = AgentContext(user_question=user_question)
         self.last_context = context
         tool_call_counts: dict[str, int] = {}
@@ -63,7 +70,11 @@ class CodePilotAgent:
             tool_calls = assistant_message.get("tool_calls") or []
 
             if not tool_calls:
-                return assistant_message.get("content") or ""
+                answer = assistant_message.get("content") or ""
+                return AgentResult(
+                    answer=answer,
+                    session=context.to_session_dict(),
+                )
 
             for tool_call in tool_calls:
                 function = tool_call.get("function") or {}
@@ -113,9 +124,13 @@ class CodePilotAgent:
                     content=tool_result,
                 )
 
-        return (
+        answer = (
             "Agent stopped because it reached the maximum number of turns. "
             "Try asking a narrower question."
+        )
+        return AgentResult(
+            answer=answer,
+            session=context.to_session_dict(),
         )
 
 

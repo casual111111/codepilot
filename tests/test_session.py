@@ -8,8 +8,8 @@ def test_session_roundtrip(tmp_path):
         "session_id": "20260610-001",
         "question": "Change the CLI",
         "messages": [],
-        "tool_steps": [],
-        "read_files": [],
+        "tool_steps": [{"step": 1, "tool": "repo_map"}],
+        "read_files": ["pyproject.toml"],
         "changed_files": ["codepilot/cli.py"],
         "test_result": {"returncode": 0},
     }
@@ -18,6 +18,8 @@ def test_session_roundtrip(tmp_path):
 
     assert load_session("20260610-001", root=str(tmp_path))["question"] == "Change the CLI"
     assert list_sessions(root=str(tmp_path))[0]["changed_files"] == ["codepilot/cli.py"]
+    assert len(list_sessions(root=str(tmp_path))[0]["tool_steps"]) == 1
+    assert list_sessions(root=str(tmp_path))[0]["read_files"] == ["pyproject.toml"]
 
 
 def test_create_session_id_is_timestamp_based():

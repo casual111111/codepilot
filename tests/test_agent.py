@@ -40,7 +40,9 @@ def test_agent_executes_tool_call_and_returns_final_answer(monkeypatch, capsys):
     answer = agent.run("entry?")
 
     assert answer == "Entry point is codepilot.cli:app."
-    assert "[1] tool_call: read_file" in capsys.readouterr().out
+    assert "[Step 1] read_file" in capsys.readouterr().out
+    assert agent.last_context is not None
+    assert agent.last_context.tool_steps[0]["name"] == "read_file"
 
 
 def test_agent_limits_repeated_repo_map_calls(monkeypatch):
@@ -76,7 +78,7 @@ def test_agent_limits_repeated_repo_map_calls(monkeypatch):
 
     agent = CodePilotAgent(
         config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
-        max_repo_map_calls=1,
+        max_tool_calls_per_name={"repo_map": 1},
         show_tool_calls=False,
     )
 

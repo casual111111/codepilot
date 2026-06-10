@@ -19,19 +19,29 @@ class CodePilotAgent:
         self,
         config: CodePilotConfig,
         max_turns: int = 8,
-        max_repo_map_calls: int = 1,
+        max_tool_calls_per_name: dict[str, int] | None = None,
         show_tool_calls: bool = True,
     ):
         self.config = config
         self.max_turns = max_turns
-        self.max_repo_map_calls = max_repo_map_calls
+        self.max_tool_calls_per_name = max_tool_calls_per_name or {
+            "repo_map": 1,
+            "list_files": 2,
+            "grep_search": 5,
+            "read_file": 12,
+            "git_status": 3,
+            "git_diff": 3,
+            "run_tests": 2,
+        }
         self.show_tool_calls = show_tool_calls
         self.tools = get_tool_definitions()
+        self.last_context: AgentContext | None = None
 
     def run(self, user_question: str) -> str:
         context = AgentContext(user_question=user_question)
+        self.last_context = context
         step = 0
-        repo_map_calls = 0
+        tool_call_counts: dict[str, int] = {}
 
         for turn in range(1, self.max_turns + 1):
             context.compact()
@@ -68,17 +78,16 @@ class CodePilotAgent:
                 step += 1
 
                 if self.show_tool_calls:
-                    console.print(f"[{step}] tool_call: {tool_name} {_format_arguments(tool_args)}")
+                    console.print(f"[Step {step}] {tool_name} {_format_arguments(tool_args)}")
 
-                if tool_name == "repo_map":
-                    repo_map_calls += 1
-                    if repo_map_calls > self.max_repo_map_calls:
-                        tool_result = (
-                            "Tool repo_map skipped: repo_map was already called. "
-                            "Use grep_search or read_file for narrower follow-up context."
-                        )
-                    else:
-                        tool_result = execute_tool(tool_name, tool_args)
+                tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
+                max_calls = self.max_tool_calls_per_name.get(tool_name, 3)
+
+                if tool_call_counts[tool_name] > max_calls:
+                    tool_result = (
+                        f"Tool {tool_name} skipped: call limit reached "
+                        f"({max_calls}). Use existing context or choose a different tool."
+                    )
                 else:
                     tool_result = execute_tool(tool_name, tool_args)
 

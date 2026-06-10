@@ -25,6 +25,7 @@ class AgentContext:
         max_messages: int = 20,
         max_tool_output_chars: int = 12000,
     ):
+        self.user_question = user_question
         self.messages: list[dict] = build_initial_messages(user_question)
         self.tool_steps: list[dict] = []
         self.read_files: set[str] = set()
@@ -71,6 +72,22 @@ class AgentContext:
 
     def compact(self) -> None:
         self.messages = compact_messages(self.messages, self.max_messages)
+
+    def to_session_record(
+        self,
+        session_id: str,
+        changed_files: list[str] | None = None,
+        test_result: dict | None = None,
+    ) -> dict:
+        return {
+            "session_id": session_id,
+            "question": self.user_question,
+            "messages": self.messages,
+            "tool_steps": self.tool_steps,
+            "read_files": sorted(self.read_files),
+            "changed_files": changed_files or [],
+            "test_result": test_result,
+        }
 
 
 def build_initial_messages(user_question: str) -> list[dict]:

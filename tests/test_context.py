@@ -29,3 +29,24 @@ def test_agent_context_compacts_messages_keeps_system_prompt():
     assert context.messages[0]["role"] == "system"
     assert len(context.messages) == 4
     assert context.messages[-1]["content"] == "9"
+
+
+def test_agent_context_builds_session_record():
+    context = AgentContext(user_question="change it")
+    context.record_tool_call(
+        step=1,
+        name="read_file",
+        arguments='{"path": "codepilot/cli.py"}',
+        result="content",
+    )
+
+    record = context.to_session_record(
+        session_id="20260610-001",
+        changed_files=["codepilot/cli.py"],
+        test_result={"returncode": 0},
+    )
+
+    assert record["question"] == "change it"
+    assert record["read_files"] == ["codepilot/cli.py"]
+    assert record["changed_files"] == ["codepilot/cli.py"]
+    assert record["test_result"] == {"returncode": 0}

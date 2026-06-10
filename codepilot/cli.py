@@ -6,6 +6,8 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
+from codepilot.agent import AgentRuntimeError, CodePilotAgent
+from codepilot.config import load_config
 from codepilot.repo_map import save_repo_map
 from codepilot.tools.git import git_diff, git_status
 from codepilot.tools.filesystem import list_project_files, read_text_file
@@ -45,15 +47,28 @@ def version():
 
 @app.command()
 def ask(question: str):
-    """Ask a one-shot question."""
+    """Ask an agentic question about the current repository."""
     console.print(Panel.fit(question, title="Your Question"))
-    console.print("CodePilot: LLM is not connected yet.")
+
+    config = load_config()
+    agent = CodePilotAgent(config=config)
+
+    try:
+        answer = agent.run(question)
+    except AgentRuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(Panel.fit(answer, title="CodePilot"))
 
 
 @app.command()
 def chat():
-    """Start an interactive chat session."""
+    """Start an interactive agent chat session."""
     console.print(Panel.fit("Welcome to CodePilot CLI", title="CodePilot"))
+
+    config = load_config()
+    agent = CodePilotAgent(config=config)
 
     while True:
         user_input = typer.prompt("You")
@@ -62,7 +77,13 @@ def chat():
             console.print("Bye!")
             break
 
-        console.print(f"CodePilot: You said: {user_input}")
+        try:
+            answer = agent.run(user_input)
+        except AgentRuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            continue
+
+        console.print(Panel.fit(answer, title="CodePilot"))
 
 
 @app.command()

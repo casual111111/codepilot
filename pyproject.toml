@@ -8,6 +8,8 @@ dependencies = [
     "typer",
     "rich",
     "python-dotenv",
+    "httpx",
+    "openai",
 ]
 
 [project.scripts]

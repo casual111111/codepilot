@@ -56,8 +56,8 @@ def list_sessions(root: str = ".") -> list[dict[str, Any]]:
             {
                 "session_id": session.get("session_id", path.stem),
                 "question": session.get("question", ""),
-                "tool_steps": session.get("tool_steps", []),
-                "read_files": session.get("read_files", []),
+                "tool_steps_count": len(session.get("tool_steps") or []),
+                "read_files_count": len(session.get("read_files") or []),
                 "changed_files": session.get("changed_files", []),
                 "test_result": session.get("test_result"),
             }

@@ -17,9 +17,11 @@ def test_session_roundtrip(tmp_path):
     save_session(session, root=str(tmp_path))
 
     assert load_session("20260610-001", root=str(tmp_path))["question"] == "Change the CLI"
-    assert list_sessions(root=str(tmp_path))[0]["changed_files"] == ["codepilot/cli.py"]
-    assert len(list_sessions(root=str(tmp_path))[0]["tool_steps"]) == 1
-    assert list_sessions(root=str(tmp_path))[0]["read_files"] == ["pyproject.toml"]
+    listed_session = list_sessions(root=str(tmp_path))[0]
+
+    assert listed_session["changed_files"] == ["codepilot/cli.py"]
+    assert listed_session["tool_steps_count"] == 1
+    assert listed_session["read_files_count"] == 1
 
 
 def test_create_session_id_is_timestamp_based():

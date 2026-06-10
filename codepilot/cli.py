@@ -341,8 +341,8 @@ def history():
         table.add_row(
             session["session_id"],
             session["question"],
-            str(len(session.get("tool_steps") or [])),
-            str(len(session.get("read_files") or [])),
+            str(session.get("tool_steps_count", 0)),
+            str(session.get("read_files_count", 0)),
         )
 
     console.print(table)

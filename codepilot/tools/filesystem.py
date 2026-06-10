@@ -57,11 +57,11 @@ def list_project_files(root: str = ".") -> list[str]:
     return sorted(files)
 
 
-def read_text_file(path: str, max_chars: int = 12000) -> str:
+def read_text_file(path: str, root: str = ".", max_chars: int = 12000) -> str:
     """
-    Read a text file with a character limit.
+    Read a text file inside the project root with a character limit.
     """
-    file_path = Path(path)
+    file_path = resolve_project_path(path, root=root)
 
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -102,7 +102,12 @@ def create_directory(path: str, root: str = ".") -> str:
     return f"Directory created: {Path(path).as_posix()}"
 
 
-def write_text_file(path: str, content: str, root: str = ".") -> str:
+def write_text_file(
+    path: str,
+    content: str,
+    root: str = ".",
+    overwrite: bool = False,
+) -> str:
     """
     Write a UTF-8 text file inside the project root, creating parent directories.
     """
@@ -110,6 +115,9 @@ def write_text_file(path: str, content: str, root: str = ".") -> str:
 
     if target_path.exists() and target_path.is_dir():
         raise IsADirectoryError(f"Path is a directory: {path}")
+
+    if target_path.exists() and not overwrite:
+        raise FileExistsError(f"File already exists: {path}")
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(content, encoding="utf-8")

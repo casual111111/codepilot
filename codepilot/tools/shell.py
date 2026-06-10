@@ -1,6 +1,12 @@
 import subprocess
 
 
+ALLOWED_TEST_COMMANDS = {
+    "pytest",
+    "python -m compileall codepilot",
+}
+
+
 def run_command(command: str, timeout: int = 60) -> dict:
     """
     Run a shell command with timeout.
@@ -38,4 +44,7 @@ def run_tests(command: str = "pytest") -> dict:
     """
     Run project tests.
     """
+    if command not in ALLOWED_TEST_COMMANDS:
+        raise ValueError(f"Test command not allowed: {command}")
+
     return run_command(command)

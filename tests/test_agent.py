@@ -23,9 +23,10 @@ def test_agent_executes_tool_action_and_returns_final_answer(monkeypatch, capsys
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
-    def fake_execute_tool_action(name, arguments):
+    def fake_execute_tool_action(name, arguments, allow_write=False):
         assert name == "read_file"
         assert arguments == {"path": "pyproject.toml"}
+        assert allow_write is False
         return ToolResult(success=True, content="codepilot = 'codepilot.cli:app'")
 
     monkeypatch.setattr("codepilot.agent.chat_completion", fake_chat_completion)
@@ -66,7 +67,8 @@ def test_agent_limits_repeated_repo_map_calls(monkeypatch):
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
-    def fake_execute_tool_action(name, arguments):
+    def fake_execute_tool_action(name, arguments, allow_write=False):
+        assert allow_write is False
         executed.append(name)
         return ToolResult(success=True, content="map")
 
@@ -108,7 +110,8 @@ def test_agent_limits_read_file_calls_per_run(monkeypatch):
     def fake_chat_completion(**kwargs):
         return responses.pop(0)
 
-    def fake_execute_tool_action(name, arguments):
+    def fake_execute_tool_action(name, arguments, allow_write=False):
+        assert allow_write is False
         executed.append(arguments)
         return ToolResult(success=True, content="content")
 
@@ -178,3 +181,24 @@ def test_agent_remembers_previous_chat_turn(monkeypatch):
     )
     assert "first question" in second_turn_content
     assert "first answer" in second_turn_content
+
+
+def test_agent_does_not_register_write_tools_by_default():
+    agent = CodePilotAgent(
+        config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
+        show_tool_calls=False,
+    )
+
+    assert "write_file" not in agent.tools_prompt
+    assert "create_directory" not in agent.tools_prompt
+
+
+def test_agent_registers_write_tools_when_allowed():
+    agent = CodePilotAgent(
+        config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
+        show_tool_calls=False,
+        allow_write=True,
+    )
+
+    assert "write_file" in agent.tools_prompt
+    assert "create_directory" in agent.tools_prompt

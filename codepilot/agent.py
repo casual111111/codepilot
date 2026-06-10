@@ -29,6 +29,7 @@ class CodePilotAgent:
         max_tool_calls_per_name: dict[str, int] | None = None,
         max_read_file_per_run: int = 12,
         show_tool_calls: bool = True,
+        allow_write: bool = False,
     ):
         self.config = config
         self.max_turns = max_turns
@@ -43,7 +44,8 @@ class CodePilotAgent:
             "run_tests": 2,
         }
         self.show_tool_calls = show_tool_calls
-        self.tools_prompt = format_tools_for_prompt()
+        self.allow_write = allow_write
+        self.tools_prompt = format_tools_for_prompt(allow_write=allow_write)
         self.last_context: AgentContext | None = None
         self.conversation_history: list[dict] = []
 
@@ -115,7 +117,11 @@ class CodePilotAgent:
                 )
                 success = False
             else:
-                result = execute_tool_action(tool_name, tool_arguments)
+                result = execute_tool_action(
+                    tool_name,
+                    tool_arguments,
+                    allow_write=self.allow_write,
+                )
                 success = result.success
                 tool_result = result.content if result.success else result.error or ""
 

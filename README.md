@@ -33,8 +33,9 @@ codepilot ask "这个项目入口在哪里？" --max-turns 6 --no-tools-log
 
 ## Agent Loop
 
-The agent uses OpenAI-compatible tool calls to inspect the repository before
-answering. Each tool call is printed as a numbered step:
+The agent uses a JSON-action loop. The model returns either a tool action or a
+final answer, and CodePilot executes approved local tools before asking the
+model to continue. Each tool call is printed as a numbered step:
 
 ```text
 [Step 1] repo_map {}

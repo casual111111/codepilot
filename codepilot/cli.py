@@ -345,6 +345,9 @@ def read(path: str):
     except IsADirectoryError:
         console.print(f"[red]Path is a directory:[/red] {path}")
         raise typer.Exit(code=1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
 
     language = detect_language(path)
     syntax = Syntax(content, language, line_numbers=True, word_wrap=True)
@@ -429,7 +432,11 @@ def test(command: str = typer.Argument("pytest")):
     """Run tests and show result."""
     console.print(f"[cyan]Running:[/cyan] {command}")
 
-    result = run_tests(command)
+    try:
+        result = run_tests(command)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
 
     output = ""
     if result["stdout"]:
@@ -601,7 +608,12 @@ def edit(
         save_session(session)
         raise typer.Exit(code=1)
 
-    test_result = run_tests(test_command)
+    try:
+        test_result = run_tests(test_command)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        save_session(session)
+        raise typer.Exit(code=1)
     session["test_result"] = {
         "command": test_result["command"],
         "returncode": test_result["returncode"],

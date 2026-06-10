@@ -37,7 +37,7 @@ def tool_list_files() -> str:
 
 
 def tool_read_file(path: str) -> str:
-    content = read_text_file(path, max_chars=MAX_TOOL_OUTPUT_CHARS)
+    content = read_text_file(path, root=".", max_chars=MAX_TOOL_OUTPUT_CHARS)
     return content
 
 
@@ -111,8 +111,11 @@ def tool_create_directory(path: str) -> str:
     return create_directory(path)
 
 
-def tool_write_file(path: str, content: str) -> str:
-    return write_text_file(path, content)
+def tool_write_file(path: str, content: str, overwrite: bool = False) -> str:
+    return write_text_file(path, content, overwrite=overwrite)
+
+
+WRITE_TOOLS = {"create_directory", "write_file"}
 
 
 TOOL_HANDLERS: dict[str, Callable[..., str]] = {
@@ -136,11 +139,11 @@ NO_ARGUMENT_TOOLS = {
 }
 
 
-def get_tool_definitions() -> list[dict[str, Any]]:
+def get_tool_definitions(allow_write: bool = False) -> list[dict[str, Any]]:
     """
-    OpenAI-compatible tool definitions.
+    Tool definitions used by the agent JSON-action loop.
     """
-    return [
+    tools = [
         {
             "type": "function",
             "function": {
@@ -279,6 +282,11 @@ def get_tool_definitions() -> list[dict[str, Any]]:
                             "type": "string",
                             "description": "Complete file content.",
                         },
+                        "overwrite": {
+                            "type": "boolean",
+                            "description": "Set true to replace an existing file. Defaults to false.",
+                            "default": False,
+                        },
                     },
                     "required": ["path", "content"],
                 },
@@ -286,14 +294,25 @@ def get_tool_definitions() -> list[dict[str, Any]]:
         },
     ]
 
+    if allow_write:
+        return tools
 
-def execute_tool(name: str, arguments_json: str) -> str:
+    return [
+        tool for tool in tools
+        if tool["function"]["name"] not in WRITE_TOOLS
+    ]
+
+
+def execute_tool(name: str, arguments_json: str, allow_write: bool = False) -> str:
     """
     Execute a registered tool by name.
     """
 
     if name not in TOOL_HANDLERS:
         return f"Unknown tool: {name}"
+
+    if name in WRITE_TOOLS and not allow_write:
+        return f"Tool {name} is not available without write permission."
 
     try:
         arguments = json.loads(arguments_json or "{}")
@@ -314,7 +333,11 @@ def execute_tool(name: str, arguments_json: str) -> str:
     return truncate_text(str(result))
 
 
-def execute_tool_action(name: str, arguments: dict[str, Any] | None = None) -> ToolResult:
+def execute_tool_action(
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    allow_write: bool = False,
+) -> ToolResult:
     """
     Execute a tool from an agent JSON action.
     """
@@ -323,6 +346,13 @@ def execute_tool_action(name: str, arguments: dict[str, Any] | None = None) -> T
             success=False,
             content="",
             error=f"Unknown tool: {name}",
+        )
+
+    if name in WRITE_TOOLS and not allow_write:
+        return ToolResult(
+            success=False,
+            content="",
+            error=f"Tool {name} is not available without write permission.",
         )
 
     handler = TOOL_HANDLERS[name]
@@ -346,10 +376,10 @@ def execute_tool_action(name: str, arguments: dict[str, Any] | None = None) -> T
     )
 
 
-def format_tools_for_prompt() -> str:
+def format_tools_for_prompt(allow_write: bool = False) -> str:
     lines = []
 
-    for tool in get_tool_definitions():
+    for tool in get_tool_definitions(allow_write=allow_write):
         function = tool["function"]
         name = function["name"]
         description = function["description"]

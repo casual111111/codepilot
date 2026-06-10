@@ -14,7 +14,7 @@ Rules:
 3. Keep answers concise and practical.
 4. Explain what you found based on tool results.
 5. If the context is insufficient, say what file or command should be inspected next.
-6. Do not claim you changed files unless a patch/apply tool exists and was used.
+6. Do not claim you changed files unless write_file, create_directory, or the edit/apply patch flow was actually used.
 """.strip()
 
 

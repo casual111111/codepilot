@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from codepilot.tools.filesystem import list_project_files, read_text_file
 
 
@@ -8,13 +6,12 @@ def grep_search(
     root: str = ".",
     max_results: int = 50,
 ) -> list[dict]:
-    root_path = Path(root).resolve()
     results: list[dict] = []
     query_lower = query.lower()
 
     for file_path in list_project_files(root):
         try:
-            content = read_text_file(str(root_path / file_path))
+            content = read_text_file(file_path, root=root)
         except Exception:
             continue
 

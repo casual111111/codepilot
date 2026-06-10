@@ -29,6 +29,7 @@ codepilot grep "Typer"
 codepilot test "python -m compileall codepilot"
 codepilot ask "这个项目入口在哪里？"
 codepilot ask "这个项目入口在哪里？" --max-turns 6 --no-tools-log
+codepilot ask "创建一个 notes.md" --allow-write
 ```
 
 ## Agent Loop
@@ -46,6 +47,12 @@ model to continue. Each tool call is printed as a numbered step:
 `AgentContext` owns one agent run: messages, tool steps, files that were read,
 tool output truncation, and final session export. The runtime limits max LLM
 turns, repeated tool calls, and total file reads so a model cannot loop forever.
+
+`codepilot ask` and `codepilot chat` are read-only by default. The write tools
+`create_directory` and `write_file` are hidden and blocked unless you pass
+`--allow-write`. File tools resolve paths inside the current project directory,
+so `../` and project-external absolute paths are rejected. `write_file` also
+refuses to overwrite existing files unless its `overwrite` argument is true.
 
 ## Development
 

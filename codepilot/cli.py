@@ -264,6 +264,7 @@ def ask(
     question: str,
     max_turns: int = typer.Option(8, "--max-turns", min=1),
     tools_log: bool = typer.Option(True, "--tools-log/--no-tools-log"),
+    allow_write: bool = typer.Option(False, "--allow-write"),
 ):
     """Ask an agentic question about the current repository."""
     console.print(Panel.fit(question, title="Your Question"))
@@ -273,6 +274,7 @@ def ask(
         config=config,
         max_turns=max_turns,
         show_tool_calls=tools_log,
+        allow_write=allow_write,
     )
 
     try:
@@ -290,6 +292,7 @@ def ask(
 def chat(
     max_turns: int = typer.Option(8, "--max-turns", min=1),
     tools_log: bool = typer.Option(True, "--tools-log/--no-tools-log"),
+    allow_write: bool = typer.Option(False, "--allow-write"),
 ):
     """Start an interactive agent chat session."""
     console.print(Panel.fit("Welcome to CodePilot CLI", title="CodePilot"))
@@ -299,6 +302,7 @@ def chat(
         config=config,
         max_turns=max_turns,
         show_tool_calls=tools_log,
+        allow_write=allow_write,
     )
 
     while True:
@@ -338,7 +342,7 @@ def files():
 def read(path: str):
     """Read a project file."""
     try:
-        content = read_text_file(path)
+        content = read_text_file(path, root=".")
     except FileNotFoundError:
         console.print(f"[red]File not found:[/red] {path}")
         raise typer.Exit(code=1)

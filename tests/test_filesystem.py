@@ -61,7 +61,7 @@ def test_write_text_file_refuses_overwrite_by_default(tmp_path: Path):
     assert target.read_text(encoding="utf-8") == "old\n"
 
 
-def test_write_text_file_overwrites_when_enabled(tmp_path: Path):
+def test_write_text_file_allows_overwrite_when_true(tmp_path: Path):
     target = tmp_path / "exists.txt"
     target.write_text("old\n", encoding="utf-8")
 

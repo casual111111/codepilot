@@ -183,7 +183,7 @@ def test_agent_remembers_previous_chat_turn(monkeypatch):
     assert "first answer" in second_turn_content
 
 
-def test_agent_does_not_register_write_tools_by_default():
+def test_agent_hides_write_tools_by_default():
     agent = CodePilotAgent(
         config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
         show_tool_calls=False,
@@ -193,7 +193,7 @@ def test_agent_does_not_register_write_tools_by_default():
     assert "create_directory" not in agent.tools_prompt
 
 
-def test_agent_registers_write_tools_when_allowed():
+def test_agent_allows_write_tools_when_enabled():
     agent = CodePilotAgent(
         config=CodePilotConfig(api_key="test", base_url="http://test", model="test"),
         show_tool_calls=False,
@@ -202,3 +202,5 @@ def test_agent_registers_write_tools_when_allowed():
 
     assert "write_file" in agent.tools_prompt
     assert "create_directory" in agent.tools_prompt
+    assert agent.max_tool_calls_per_name["write_file"] == 5
+    assert agent.max_tool_calls_per_name["create_directory"] == 3

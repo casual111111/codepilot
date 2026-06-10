@@ -23,8 +23,8 @@ def detect_language(path: str) -> str:
     return "text"
 
 
-def extract_python_symbols(path: str) -> list[str]:
-    content = read_text_file(path)
+def extract_python_symbols(path: str, root: str = ".") -> list[str]:
+    content = read_text_file(path, root=root)
     tree = ast.parse(content)
 
     symbols: list[str] = []
@@ -65,7 +65,7 @@ def build_repo_map(root: str = ".") -> dict[str, Any]:
 
         if language == "python":
             try:
-                item["symbols"] = extract_python_symbols(str(abs_path))
+                item["symbols"] = extract_python_symbols(file_path, root=root)
             except SyntaxError:
                 item["symbols"] = ["<syntax error>"]
 

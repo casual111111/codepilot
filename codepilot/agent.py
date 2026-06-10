@@ -43,9 +43,16 @@ class CodePilotAgent:
             "git_diff": 3,
             "run_tests": 2,
         }
+        if allow_write and max_tool_calls_per_name is None:
+            self.max_tool_calls_per_name.update(
+                {
+                    "create_directory": 3,
+                    "write_file": 5,
+                }
+            )
         self.show_tool_calls = show_tool_calls
         self.allow_write = allow_write
-        self.tools_prompt = format_tools_for_prompt(allow_write=allow_write)
+        self.tools_prompt = format_tools_for_prompt(include_write=allow_write)
         self.last_context: AgentContext | None = None
         self.conversation_history: list[dict] = []
 

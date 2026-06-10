@@ -139,7 +139,7 @@ NO_ARGUMENT_TOOLS = {
 }
 
 
-def get_tool_definitions(allow_write: bool = False) -> list[dict[str, Any]]:
+def get_tool_definitions(include_write: bool = False) -> list[dict[str, Any]]:
     """
     Tool definitions used by the agent JSON-action loop.
     """
@@ -294,7 +294,7 @@ def get_tool_definitions(allow_write: bool = False) -> list[dict[str, Any]]:
         },
     ]
 
-    if allow_write:
+    if include_write:
         return tools
 
     return [
@@ -376,10 +376,10 @@ def execute_tool_action(
     )
 
 
-def format_tools_for_prompt(allow_write: bool = False) -> str:
+def format_tools_for_prompt(include_write: bool = False) -> str:
     lines = []
 
-    for tool in get_tool_definitions(allow_write=allow_write):
+    for tool in get_tool_definitions(include_write=include_write):
         function = tool["function"]
         name = function["name"]
         description = function["description"]
